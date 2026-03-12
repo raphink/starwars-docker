@@ -1,0 +1,46 @@
+# Death Star — local dev compose
+#
+# Starts two services:
+#   deathstar  — Go API (port 8080 on the host)
+#   ui         — Nginx serving the static frontend + reverse-proxying /api/* to the API (port 9090)
+#
+# Usage:
+#   docker compose up --build          # build both images and start
+#   docker compose up --build ui       # rebuild only the UI
+#   docker compose logs -f             # tail logs
+#   docker compose down                # stop and remove containers
+#
+# Open http://localhost:9090 in a browser.
+# Fire events against the API directly:
+#   curl -X POST -H "X-Source-Identity: tiefighter" http://localhost:8080/v1/request-landing
+#   curl -X PUT  http://localhost:8080/v1/exhaust-port
+#   curl -H "X-Source-Identity: xwing" -X POST http://localhost:8080/v1/request-landing
+
+services:
+  deathstar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cilium/starwars
+    container_name: deathstar
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/starwars-docker", "--help"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  ui:
+    build:
+      context: ui
+      dockerfile: Dockerfile
+    image: cilium/deathstar-ui
+    container_name: deathstar-ui
+    ports:
+      - "9090:80"
+    depends_on:
+      - deathstar
+    restart: unless-stopped

@@ -329,45 +329,6 @@ main {
 }
 
 /* =========================================================
-   State control buttons
-   ========================================================= */
-#controls {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.ctrl-btn {
-  font-family: var(--font-pixel);
-  font-size: 7px;
-  padding: 8px 10px;
-  background: var(--surface);
-  color: var(--text-dim);
-  border: 2px solid var(--border);
-  cursor: pointer;
-  letter-spacing: 1px;
-  transition: all 0.15s ease;
-}
-
-.ctrl-btn:hover {
-  background: var(--border);
-  color: var(--text);
-  border-color: var(--blue);
-  box-shadow: var(--glow-blue);
-}
-
-.ctrl-btn:active {
-  transform: scale(0.95);
-}
-
-.reset-btn:hover {
-  border-color: var(--yellow);
-  box-shadow: 0 0 8px var(--yellow), 0 0 20px rgba(255, 204, 0, 0.25);
-  color: var(--yellow);
-}
-
-/* =========================================================
    Event log panel (right)
    ========================================================= */
 #event-log {

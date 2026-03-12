@@ -13,7 +13,7 @@ import (
 type Event struct {
 	ID        string `json:"id"`
 	Timestamp string `json:"timestamp"`  // RFC3339Nano UTC
-	Type      string `json:"type"`       // "request-landing" | "exhaust-port" | "connected" | "other"
+	Type      string `json:"type"`       // "request-landing" | "exhaust-port" | "connected" | "shield" | "other"
 	Endpoint  string `json:"endpoint"`   // raw request path
 	Method    string `json:"method"`     // HTTP method
 	Source    string `json:"source"`     // client IP (port stripped)
@@ -21,6 +21,7 @@ type Event struct {
 	LatencyMs int64  `json:"latency_ms"` // handler duration in ms
 	Identity  string `json:"identity"`   // X-Source-Identity, or first X-Forwarded-For, or ""
 	Allowed   bool   `json:"allowed"`    // status < 400
+	Level     string `json:"level,omitempty"` // for "shield" events: "none" | "l3l4" | "l7"
 }
 
 // Hub manages SSE client connections and broadcasts events to all of them.

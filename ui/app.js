@@ -61,15 +61,6 @@ let eventSource  = null;
 // State machine
 // ---------------------------------------------------------------------------
 
-/**
- * setState — called by manual buttons or reset.
- * Does not fire when already exploded (except reset clears exploded).
- */
-function setStateManual(newState) {
-  if (currentState === STATES.EXPLODED && newState !== STATES.UNPROTECTED) return;
-  applyState(newState);
-}
-
 function applyState(newState) {
   currentState = newState;
 
@@ -110,18 +101,6 @@ function applyState(newState) {
       break;
   }
 }
-
-/** resetStation — clear explosion, go back to unprotected */
-function resetStation() {
-  // Remove and re-add explosion element to reset CSS animations
-  explosionEl.classList.add('hidden');
-  deathstarSvg.classList.remove('ds-exploded');
-  applyState(STATES.UNPROTECTED);
-}
-
-// Expose to onclick handlers in HTML
-window.setStateManual = setStateManual;
-window.resetStation   = resetStation;
 
 // ---------------------------------------------------------------------------
 // Impact flashes
@@ -253,6 +232,19 @@ function connect() {
   }
 
   eventSource = new EventSource(SSE_URL);
+
+  // ----- shield (presenter sets policy level via PUT /v1/shield/{level}) -----
+  eventSource.addEventListener('shield', (e) => {
+    const ev = parseEvent(e);
+    if (!ev) return;
+    // Map API level names → UI state names ("none" → "unprotected")
+    const stateMap = { none: STATES.UNPROTECTED, l3l4: STATES.L3L4, l7: STATES.L7 };
+    const newState = stateMap[ev.level];
+    if (!newState) return;
+    // "none" after explosion = reset; otherwise guard against transitions out of exploded
+    if (currentState === STATES.EXPLODED && newState !== STATES.UNPROTECTED) return;
+    applyState(newState);
+  });
 
   // ----- request-landing -----
   eventSource.addEventListener('request-landing', (e) => {

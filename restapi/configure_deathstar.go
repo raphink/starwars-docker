@@ -3,8 +3,10 @@ package restapi
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	errors "github.com/go-openapi/errors"
@@ -102,6 +104,8 @@ func configureTLS(tlsConfig *tls.Config) {
 // This function can be called multiple times, depending on the number of serving schemes.
 // scheme value will be set accordingly: "http", "https" or "unix"
 func configureServer(s *graceful.Server, scheme string) {
+	// Disable write timeout so SSE connections can be held open indefinitely.
+	s.WriteTimeout = 0
 }
 
 // The middleware configuration is for the handler executors. These do not apply to the swagger.json document.
@@ -110,8 +114,89 @@ func setupMiddlewares(handler http.Handler) http.Handler {
 	return handler
 }
 
-// The middleware configuration happens before anything, this middleware also applies to serving the swagger.json document.
-// So this is a good place to plug in a panic handling middleware, logging and metrics
+// setupGlobalMiddleware wraps the entire handler stack. It:
+//  1. Routes GET /v1/events to the SSE hub (before the swagger router sees it).
+//  2. Wraps every other request with a status-capturing recorder so each completed
+//     request is broadcast as an Event to all connected SSE clients.
 func setupGlobalMiddleware(handler http.Handler) http.Handler {
-	return handler
+	mux := http.NewServeMux()
+
+	// SSE endpoint — must be registered before the catch-all below.
+	mux.Handle("/v1/events", globalHub)
+
+	// All other requests go through the swagger handler, wrapped by the event emitter.
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		handler.ServeHTTP(rec, r)
+
+		globalHub.Broadcast(Event{
+			Timestamp: start.UTC().Format(time.RFC3339Nano),
+			Type:      eventType(r.URL.Path),
+			Endpoint:  r.URL.Path,
+			Method:    r.Method,
+			Source:    resolveSource(r),
+			Status:    rec.status,
+			LatencyMs: time.Since(start).Milliseconds(),
+			Identity:  resolveIdentity(r),
+			Allowed:   rec.status < 400,
+		})
+	}))
+
+	return mux
+}
+
+// eventType maps a request path to a named event type.
+func eventType(path string) string {
+	switch {
+	case strings.HasSuffix(path, "/request-landing"):
+		return "request-landing"
+	case strings.HasSuffix(path, "/exhaust-port"):
+		return "exhaust-port"
+	default:
+		return "other"
+	}
+}
+
+// resolveSource returns the best available client IP for an event.
+// Prefers X-Forwarded-For (set by Nginx proxy), falls back to RemoteAddr.
+func resolveSource(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For may be a comma-separated list; take the first entry.
+		if idx := strings.IndexByte(xff, ','); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// resolveIdentity returns the caller's declared identity.
+// Prefers X-Source-Identity (explicit label), falls back to X-Forwarded-For.
+func resolveIdentity(r *http.Request) string {
+	if id := r.Header.Get("X-Source-Identity"); id != "" {
+		return id
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if idx := strings.IndexByte(xff, ','); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	return ""
+}
+
+// statusRecorder wraps http.ResponseWriter to capture the written status code.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
 }

@@ -1,5 +1,6 @@
 /* =========================================================
-   Death Star UI — Pixel-art / retro Star Wars theme
+   Death Star Observability Dashboard
+   Pixel-art / retro Star Wars theme
    ========================================================= */
 
 /* ---------- Google Font (fallback for offline) ---------- */
@@ -13,28 +14,27 @@
 }
 
 :root {
-  --bg:         #08080e;
-  --surface:    #0d0d18;
-  --surface-alt: #12121f;   /* left panel — slightly lighter than log panel */
-  --border:     #2a2a44;
-  --text:       #ddddef;
-  --text-dim:   #9090a8;    /* was #606070 — much brighter for readability */
-  --text-muted: #5a5a70;    /* for truly secondary chrome */
-  --green:      #00ff88;
-  --blue:       #44aaff;
-  --red:        #ff2244;
-  --yellow:     #ffcc00;
-  --orange:     #ff8800;
-  --ds-body:    #5a5a6a;
-  --ds-dark:    #30303c;
-  --ds-hi:      #8888a0;
-  --ds-dish:    #404050;
-  --ds-core:    #ff8844;
-  --font-pixel: 'Press Start 2P', 'Courier New', monospace;
-  --font-mono:  'Courier New', Courier, monospace;
-  --glow-green: 0 0 8px #00ff88, 0 0 20px #00ff8840;
-  --glow-blue:  0 0 8px #44aaff, 0 0 20px #44aaff40;
-  --glow-red:   0 0 8px #ff2244, 0 0 20px #ff224440;
+  --bg:          #08080e;
+  --surface:     #0d0d18;
+  --surface-alt: #12121f;
+  --border:      #2a2a44;
+  --text:        #ddddef;
+  --text-dim:    #9090a8;
+  --text-muted:  #5a5a70;
+  --green:       #00ff88;
+  --blue:        #44aaff;
+  --red:         #ff2244;
+  --yellow:      #ffcc00;
+  --orange:      #ff8800;
+  --ds-body:     #5a5a6a;
+  --ds-dark:     #30303c;
+  --ds-hi:       #8888a0;
+  --ds-dish:     #404050;
+  --ds-core:     #ff8844;
+  --font-pixel:  'Press Start 2P', 'Courier New', monospace;
+  --font-mono:   'Courier New', Courier, monospace;
+  --glow-green:  0 0 8px #00ff88, 0 0 20px #00ff8840;
+  --glow-red:    0 0 8px #ff2244, 0 0 20px #ff224440;
 }
 
 html, body {
@@ -48,7 +48,7 @@ html, body {
 }
 
 /* =========================================================
-   CRT Wrapper — scanlines + flicker
+   CRT Wrapper — scanlines + subtle flicker
    ========================================================= */
 .crt {
   position: relative;
@@ -60,7 +60,6 @@ html, body {
   animation: flicker 8s infinite;
 }
 
-/* Scanline overlay */
 .crt::after {
   content: '';
   position: fixed;
@@ -105,43 +104,11 @@ h1 {
   text-shadow: 0 0 10px rgba(200, 200, 216, 0.4);
 }
 
-/* Status badge */
-.badge {
+.header-counter {
   font-family: var(--font-pixel);
-  font-size: 9px;
-  padding: 6px 12px;
-  border-radius: 3px;
-  letter-spacing: 2px;
-  border: 2px solid;
-  transition: all 0.3s ease;
-}
-
-.state-unprotected {
-  color: var(--red);
-  border-color: var(--red);
-  box-shadow: var(--glow-red);
-  animation: badge-pulse-red 2s infinite;
-}
-.state-l3l4 {
-  color: var(--blue);
-  border-color: var(--blue);
-  box-shadow: var(--glow-blue);
-}
-.state-l7 {
-  color: var(--green);
-  border-color: var(--green);
-  box-shadow: var(--glow-green);
-}
-.state-exploded {
-  color: var(--orange);
-  border-color: var(--orange);
-  box-shadow: 0 0 8px var(--orange), 0 0 20px #ff880040;
-  animation: badge-pulse-red 0.5s infinite;
-}
-
-@keyframes badge-pulse-red {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.6; }
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
 }
 
 /* =========================================================
@@ -156,25 +123,24 @@ main {
 }
 
 /* =========================================================
-   Station section (left)
+   Station section (left column)
    ========================================================= */
 .station-section {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  flex: 0 0 340px;
+  flex: 0 0 300px;
   padding: 20px;
   border-right: 2px solid var(--border);
-  gap: 20px;
+  gap: 16px;
   background: var(--surface-alt);
 }
 
-/* Station wrapper holds the Death Star SVG + rings + impacts */
 .station-wrapper {
   position: relative;
-  width: 280px;
-  height: 280px;
+  width: 260px;
+  height: 260px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -191,69 +157,47 @@ main {
   z-index: 2;
 }
 
-.ds-shadow { fill: #040408; }
-.ds-body   { fill: var(--ds-body); }
-.ds-band       { fill: none; stroke: var(--ds-dark); stroke-width: 1.5; opacity: 0.6; }
-.ds-band-faint { fill: none; stroke: var(--ds-dark); stroke-width: 1; opacity: 0.3; }
-.ds-trench    { stroke: var(--ds-dark); stroke-width: 5; fill: none; }
-.ds-trench-hi { stroke: var(--ds-hi);  stroke-width: 1; fill: none; opacity: 0.4; }
-.ds-trench-lo { stroke: #202028;       stroke-width: 1; fill: none; opacity: 0.6; }
-.ds-dish-rim  { fill: var(--ds-dark); }
-.ds-dish      { fill: var(--ds-dish); }
-.ds-dish-mid  { fill: #28282e; }
-.ds-dish-core { fill: var(--ds-core); }
-.ds-dish-ring { stroke: #50505a; stroke-width: 1; opacity: 0.5; }
-.ds-crater    { fill: var(--ds-dark); }
-.ds-tower     { fill: var(--ds-dark); }
+.ds-shadow      { fill: #040408; }
+.ds-body        { fill: var(--ds-body); }
+.ds-band        { fill: none; stroke: var(--ds-dark); stroke-width: 1.5; opacity: 0.6; }
+.ds-band-faint  { fill: none; stroke: var(--ds-dark); stroke-width: 1;   opacity: 0.3; }
+.ds-trench      { stroke: var(--ds-dark); stroke-width: 5;   fill: none; }
+.ds-trench-hi   { stroke: var(--ds-hi);   stroke-width: 1;   fill: none; opacity: 0.4; }
+.ds-trench-lo   { stroke: #202028;        stroke-width: 1;   fill: none; opacity: 0.6; }
+.ds-dish-rim    { fill: var(--ds-dark); }
+.ds-dish        { fill: var(--ds-dish); }
+.ds-dish-mid    { fill: #28282e; }
+.ds-dish-core   { fill: var(--ds-core); }
+.ds-dish-ring   { stroke: #50505a; stroke-width: 1; opacity: 0.5; }
+.ds-crater      { fill: var(--ds-dark); }
+.ds-tower       { fill: var(--ds-dark); }
 
-/* Exploded state tints the station red */
+/* Exploded state */
 .ds-exploded .ds-body   { fill: #5a2020; }
 .ds-exploded .ds-shadow { fill: #1a0808; }
 .ds-exploded            { filter: drop-shadow(0 0 16px rgba(255, 60, 20, 0.8)); }
 
-/* ---------- Shield rings ---------- */
-.shield-ring,
-.l7-ring {
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 3;
+/* ---------- Station status label ---------- */
+.station-status {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  letter-spacing: 2px;
+  padding: 6px 12px;
+  border: 2px solid var(--border);
+  color: var(--text-dim);
 }
 
-.shield-ring {
-  width: 268px;
-  height: 268px;
-  border: 3px solid var(--blue);
-  box-shadow: 0 0 10px var(--blue), inset 0 0 10px rgba(68, 170, 255, 0.1);
-  animation: shield-pulse-blue 2s ease-in-out infinite;
+.status-destroyed {
+  color: var(--red);
+  border-color: var(--red);
+  box-shadow: var(--glow-red);
+  animation: pulse-red 0.5s infinite;
 }
 
-.l7-ring {
-  width: 256px;
-  height: 256px;
-  border: 2px solid var(--green);
-  box-shadow: 0 0 8px var(--green), inset 0 0 8px rgba(0, 255, 136, 0.1);
-  animation: shield-pulse-green 1.5s ease-in-out infinite;
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
 }
-
-/* L7 state overrides shield ring to green */
-.shield-ring.l7-active {
-  border-color: var(--green);
-  box-shadow: 0 0 10px var(--green), inset 0 0 10px rgba(0, 255, 136, 0.1);
-  animation: shield-pulse-green 1.5s ease-in-out infinite;
-}
-
-@keyframes shield-pulse-blue {
-  0%, 100% { opacity: 1;   transform: scale(1); }
-  50%       { opacity: 0.7; transform: scale(1.015); }
-}
-
-@keyframes shield-pulse-green {
-  0%, 100% { opacity: 1;   transform: scale(1); }
-  50%       { opacity: 0.7; transform: scale(1.02); }
-}
-
-.hidden { display: none !important; }
 
 /* ---------- Impact layer ---------- */
 #impact-layer {
@@ -311,13 +255,13 @@ main {
   animation: exp-ring-expand 1s ease-out forwards;
 }
 
-.exp-ring-1 { width: 40px;  height: 40px;  animation-delay: 0s; }
-.exp-ring-2 { width: 40px;  height: 40px;  animation-delay: 0.15s; opacity: 0.7; }
-.exp-ring-3 { width: 40px;  height: 40px;  animation-delay: 0.3s;  opacity: 0.4; }
+.exp-ring-1 { width: 40px; height: 40px; animation-delay: 0s; }
+.exp-ring-2 { width: 40px; height: 40px; animation-delay: 0.15s; opacity: 0.7; }
+.exp-ring-3 { width: 40px; height: 40px; animation-delay: 0.3s;  opacity: 0.4; }
 
 @keyframes exp-ring-expand {
-  0%   { transform: scale(1);   opacity: 1; }
-  100% { transform: scale(6);   opacity: 0; }
+  0%   { transform: scale(1); opacity: 1; }
+  100% { transform: scale(6); opacity: 0; }
 }
 
 @keyframes exp-shake {
@@ -328,8 +272,76 @@ main {
   80%       { transform: translateX(3px); }
 }
 
+.hidden { display: none !important; }
+
 /* =========================================================
-   Event log panel (right)
+   Dashboard (right column)
+   ========================================================= */
+.dashboard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* =========================================================
+   Charts row
+   ========================================================= */
+.charts-row {
+  display: flex;
+  gap: 0;
+  flex: 0 0 220px;   /* fixed height; charts don't squash the log */
+  border-bottom: 2px solid var(--border);
+  overflow: hidden;
+}
+
+.chart-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.chart-panel + .chart-panel {
+  border-left: 2px solid var(--border);
+}
+
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 14px 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.panel-title {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+
+.panel-subtitle {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.chart-wrap {
+  flex: 1;
+  position: relative;
+  padding: 8px 10px 6px;
+  overflow: hidden;
+}
+
+.chart-wrap canvas {
+  display: block;
+}
+
+/* =========================================================
+   Event log panel
    ========================================================= */
 #event-log {
   flex: 1;
@@ -344,14 +356,14 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 8px 14px;
   border-bottom: 2px solid var(--border);
   flex-shrink: 0;
 }
 
 .log-header h2 {
   font-family: var(--font-pixel);
-  font-size: 9px;
+  font-size: 8px;
   color: var(--text-dim);
   letter-spacing: 2px;
 }
@@ -376,7 +388,7 @@ main {
   flex: 1;
   overflow-y: auto;
   list-style: none;
-  padding: 6px 0;
+  padding: 4px 0;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -387,14 +399,14 @@ main {
 
 .log-entry {
   font-family: var(--font-mono);
-  font-size: 13px;
-  padding: 5px 14px;
+  font-size: 12px;
+  padding: 4px 14px;
   border-left: 3px solid transparent;
-  animation: log-slide-in 0.2s ease-out;
+  animation: log-slide-in 0.15s ease-out;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text);          /* default: bright white — readable on dark bg */
+  color: var(--text);
 }
 
 @keyframes log-slide-in {
@@ -402,24 +414,22 @@ main {
   to   { opacity: 1; transform: translateX(0); }
 }
 
-/* Row accent: only the left border changes per event type.
-   Individual spans carry the colour so the full line stays readable. */
 .log-allowed   { border-left-color: var(--green); }
 .log-denied    { border-left-color: var(--red); }
 .log-exhaust   { border-left-color: var(--orange); }
-.log-connected { border-left-color: var(--border); color: var(--text-dim); font-style: italic; }
+.log-connected { border-left-color: var(--border); color: var(--text-muted); font-style: italic; }
 .log-other     { border-left-color: var(--border); color: var(--text-dim); }
 
-/* Per-span colours — these do the heavy lifting */
-.log-time     { color: var(--text-dim); margin-right: 8px; }
-.log-identity { color: var(--yellow);   margin-right: 8px; font-weight: bold; }
-.log-method   { color: var(--blue);     margin-right: 6px; }
-.log-path     { color: var(--text);     margin-right: 6px; }
-.log-arrow    { color: var(--text-muted); margin-right: 6px; }
-.log-status   { font-weight: bold; }
-.log-allowed   .log-status { color: var(--green); }
-.log-denied    .log-status { color: var(--red); }
-.log-exhaust   .log-status { color: var(--orange); }
+.log-time   { color: var(--text-dim);  margin-right: 8px; }
+.log-source { color: var(--yellow);    margin-right: 8px; font-weight: bold; }
+.log-method { color: var(--blue);      margin-right: 6px; }
+.log-path   { color: var(--text);      margin-right: 6px; }
+.log-arrow  { color: var(--text-muted); margin-right: 6px; }
+.log-info   { color: var(--text-muted); }
+.log-status { font-weight: bold; }
+.log-allowed .log-status { color: var(--green); }
+.log-denied  .log-status { color: var(--red); }
+.log-exhaust .log-status { color: var(--orange); }
 
 /* =========================================================
    Footer
@@ -438,9 +448,9 @@ footer {
   color: var(--text-dim);
 }
 
-.conn-connecting  { color: var(--yellow); }
-.conn-connected   { color: var(--green); }
-.conn-disconnected { color: var(--red); animation: badge-pulse-red 1s infinite; }
+.conn-connecting   { color: var(--yellow); }
+.conn-connected    { color: var(--green); }
+.conn-disconnected { color: var(--red); animation: pulse-red 1s infinite; }
 
 .footer-brand {
   color: var(--text-muted);
@@ -448,10 +458,12 @@ footer {
 }
 
 /* =========================================================
-   Responsive — smaller screens
+   Responsive
    ========================================================= */
-@media (max-width: 700px) {
-  .station-section { flex: none; width: 100%; border-right: none; border-bottom: 2px solid var(--border); }
+@media (max-width: 900px) {
   main { flex-direction: column; }
-  #event-log { min-height: 200px; }
+  .station-section { flex: none; width: 100%; border-right: none; border-bottom: 2px solid var(--border); flex-direction: row; justify-content: space-around; padding: 12px 20px; }
+  .station-wrapper { width: 160px; height: 160px; }
+  #deathstar { width: 150px; height: 150px; }
+  .charts-row { flex: 0 0 160px; }
 }

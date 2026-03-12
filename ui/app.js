@@ -1,131 +1,286 @@
 /**
- * app.js — Death Star SSE frontend
+ * app.js — Death Star Observability Dashboard
  *
- * Connects to /api/events (proxied by Nginx to the Go SSE hub at /v1/events)
- * and updates the visual Death Star display in real-time.
+ * Connects to /api/events (Nginx proxied → Go SSE hub at /v1/events) and:
+ *   1. Displays rolling event-rate charts broken down by source IP and endpoint.
+ *   2. Shows a live traffic log (IP, method, endpoint, status, time).
+ *   3. Transitions the Death Star visual to "exploded" when PUT /v1/exhaust-port succeeds.
  *
- * Visual states:
- *   unprotected  — no shields, red badge, red glow on impacts
- *   l3l4         — blue shield ring visible, traffic may be filtered at L3/L4
- *   l7           — green shield ring + inner l7 ring, L7 policy enforced
- *   exploded     — exhaust port hit, destruction animation
- *
- * Manual state buttons allow the demo presenter to sync visuals with kubectl
- * policy applies (Cilium drops happen in kernel, so no event fires for blocks —
- * the presenter advances the visual state themselves).
+ * The dashboard shows only what the Death Star application can see — raw source IPs
+ * and HTTP endpoints.  Identity (Cilium labels like org=empire) is not visible here;
+ * that's the job of Hubble.  This deliberate blindness is the teaching moment.
  */
 
 'use strict';
 
 // ---------------------------------------------------------------------------
-// Constants
+// Configuration
 // ---------------------------------------------------------------------------
-const STATES = Object.freeze({
-  UNPROTECTED: 'unprotected',
-  L3L4:        'l3l4',
-  L7:          'l7',
-  EXPLODED:    'exploded',
-});
+const SSE_URL        = '/api/events';
+const MAX_LOG        = 80;          // max rows in traffic log
+const WINDOW_SECS    = 180;         // rolling chart window (3 minutes)
+const BUCKET_SECS    = 5;           // one bar = 5 s
+const BUCKETS        = WINDOW_SECS / BUCKET_SECS;   // 36 buckets
+const MAX_SERIES     = 8;           // max distinct IPs / endpoints on a chart
 
-const BADGE_LABELS = {
-  [STATES.UNPROTECTED]: 'UNPROTECTED',
-  [STATES.L3L4]:        'L3/L4 SHIELD',
-  [STATES.L7]:          'L7 LOCKED',
-  [STATES.EXPLODED]:    'DESTROYED',
-};
-
-const MAX_LOG_ENTRIES = 60;
-const SSE_URL         = '/api/events';
+// Colour palette for chart series (cycles if more than palette length)
+const PALETTE = [
+  '#44aaff', '#00ff88', '#ffcc00', '#ff8800',
+  '#ff2244', '#cc44ff', '#00dddd', '#ff66aa',
+];
 
 // ---------------------------------------------------------------------------
 // DOM refs
 // ---------------------------------------------------------------------------
-const badge        = document.getElementById('status-badge');
-const shieldRing   = document.getElementById('shield-ring');
-const l7Ring       = document.getElementById('l7-ring');
-const deathstarSvg = document.getElementById('deathstar');
-const impactLayer  = document.getElementById('impact-layer');
-const explosionEl  = document.getElementById('explosion');
-const logList      = document.getElementById('log-list');
-const connStatus   = document.getElementById('conn-status');
-const eventCounter = document.getElementById('event-counter');
+const deathstarSvg  = document.getElementById('deathstar');
+const impactLayer   = document.getElementById('impact-layer');
+const explosionEl   = document.getElementById('explosion');
+const stationStatus = document.getElementById('station-status');
+const logList       = document.getElementById('log-list');
+const connStatus    = document.getElementById('conn-status');
+const eventCounter  = document.getElementById('event-counter');
 
 // ---------------------------------------------------------------------------
 // Application state
 // ---------------------------------------------------------------------------
-let currentState = STATES.UNPROTECTED;
-let totalEvents  = 0;
-let eventSource  = null;
+let exploded    = false;
+let totalEvents = 0;
+let eventSource = null;
 
 // ---------------------------------------------------------------------------
-// State machine
+// Rolling time-series store
 // ---------------------------------------------------------------------------
+/**
+ * RollingStore tracks per-key event counts in fixed-width time buckets.
+ * Each bucket covers BUCKET_SECS seconds.  The store always holds exactly
+ * BUCKETS buckets, dropping the oldest as time advances.
+ */
+class RollingStore {
+  constructor() {
+    this._keys     = [];          // ordered list of seen keys
+    this._buckets  = [];          // array of {ts, counts:{key:n}} (newest last)
+    this._init();
+  }
 
-function applyState(newState) {
-  currentState = newState;
+  _nowBucket() {
+    return Math.floor(Date.now() / 1000 / BUCKET_SECS) * BUCKET_SECS;
+  }
 
-  // Badge
-  badge.textContent = BADGE_LABELS[newState];
-  badge.className = `badge state-${newState}`;
+  _init() {
+    const now = this._nowBucket();
+    for (let i = BUCKETS - 1; i >= 0; i--) {
+      this._buckets.push({ ts: now - i * BUCKET_SECS, counts: {} });
+    }
+  }
 
-  // Shield rings
-  switch (newState) {
-    case STATES.UNPROTECTED:
-      shieldRing.classList.add('hidden');
-      shieldRing.classList.remove('l7-active');
-      l7Ring.classList.add('hidden');
-      deathstarSvg.classList.remove('ds-exploded');
-      explosionEl.classList.add('hidden');
-      break;
+  /** Record one event for a given key at the current time. */
+  record(key) {
+    const ts = this._nowBucket();
 
-    case STATES.L3L4:
-      shieldRing.classList.remove('hidden');
-      shieldRing.classList.remove('l7-active');
-      l7Ring.classList.add('hidden');
-      deathstarSvg.classList.remove('ds-exploded');
-      break;
+    // Advance buckets if time has moved forward
+    const last = this._buckets[this._buckets.length - 1];
+    if (ts > last.ts) {
+      const steps = Math.min(Math.round((ts - last.ts) / BUCKET_SECS), BUCKETS);
+      for (let i = 0; i < steps; i++) {
+        this._buckets.push({ ts: last.ts + (i + 1) * BUCKET_SECS, counts: {} });
+      }
+      // Drop oldest to keep window size
+      this._buckets = this._buckets.slice(-BUCKETS);
+    }
 
-    case STATES.L7:
-      shieldRing.classList.remove('hidden');
-      shieldRing.classList.add('l7-active');
-      l7Ring.classList.remove('hidden');
-      deathstarSvg.classList.remove('ds-exploded');
-      break;
+    // Increment count in the current bucket
+    const cur = this._buckets[this._buckets.length - 1];
+    cur.counts[key] = (cur.counts[key] || 0) + 1;
 
-    case STATES.EXPLODED:
-      shieldRing.classList.add('hidden');
-      shieldRing.classList.remove('l7-active');
-      l7Ring.classList.add('hidden');
-      deathstarSvg.classList.add('ds-exploded');
-      explosionEl.classList.remove('hidden');
-      break;
+    // Register key if new
+    if (!this._keys.includes(key)) {
+      this._keys.push(key);
+      // Keep only top MAX_SERIES by recent activity; evict the least-active if needed
+      if (this._keys.length > MAX_SERIES) {
+        this._evictLeastActive();
+      }
+    }
+  }
+
+  _evictLeastActive() {
+    // Score each key by total events in the current window
+    const scores = {};
+    for (const b of this._buckets) {
+      for (const [k, n] of Object.entries(b.counts)) {
+        scores[k] = (scores[k] || 0) + n;
+      }
+    }
+    let minKey = this._keys[0], minScore = Infinity;
+    for (const k of this._keys) {
+      if ((scores[k] || 0) < minScore) { minScore = scores[k] || 0; minKey = k; }
+    }
+    this._keys = this._keys.filter(k => k !== minKey);
+    // Remove from buckets too
+    for (const b of this._buckets) { delete b.counts[minKey]; }
+  }
+
+  /**
+   * snapshot() → { labels: string[], series: [{key, data:[]}] }
+   * labels: HH:MM:SS for each bucket
+   * data: counts array parallel to labels
+   */
+  snapshot() {
+    // Ensure buckets are up-to-date (no events may have arrived recently)
+    this.record.__no_op || this._advance();
+
+    const labels = this._buckets.map(b => {
+      const d = new Date(b.ts * 1000);
+      return `${fmt2(d.getHours())}:${fmt2(d.getMinutes())}:${fmt2(d.getSeconds())}`;
+    });
+
+    const series = this._keys.map(key => ({
+      key,
+      data: this._buckets.map(b => b.counts[key] || 0),
+    }));
+
+    return { labels, series };
+  }
+
+  _advance() {
+    const ts = this._nowBucket();
+    const last = this._buckets[this._buckets.length - 1];
+    if (ts > last.ts) {
+      const steps = Math.min(Math.round((ts - last.ts) / BUCKET_SECS), BUCKETS);
+      for (let i = 0; i < steps; i++) {
+        this._buckets.push({ ts: last.ts + (i + 1) * BUCKET_SECS, counts: {} });
+      }
+      this._buckets = this._buckets.slice(-BUCKETS);
+    }
   }
 }
 
+const sourceStore   = new RollingStore();
+const endpointStore = new RollingStore();
+
 // ---------------------------------------------------------------------------
-// Impact flashes
+// Chart.js setup
 // ---------------------------------------------------------------------------
+Chart.defaults.color           = '#9090a8';
+Chart.defaults.borderColor     = '#2a2a44';
+Chart.defaults.font.family     = "'Courier New', Courier, monospace";
+Chart.defaults.font.size       = 11;
+
+function makeChart(canvasId) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'bar',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            boxWidth: 10,
+            boxHeight: 10,
+            padding: 8,
+            font: { size: 10 },
+          },
+        },
+        tooltip: {
+          callbacks: {
+            title: (items) => items[0]?.label ?? '',
+          },
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          ticks: {
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 7,
+            font: { size: 9 },
+          },
+          grid: { color: '#1a1a2c' },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: { precision: 0, maxTicksLimit: 5 },
+          grid: { color: '#1a1a2c' },
+        },
+      },
+    },
+  });
+}
+
+const sourceChart   = makeChart('chart-source');
+const endpointChart = makeChart('chart-endpoint');
+
+function refreshChart(chart, store) {
+  const { labels, series } = store.snapshot();
+
+  chart.data.labels = labels;
+
+  // Add/update datasets
+  series.forEach((s, i) => {
+    const colour = PALETTE[i % PALETTE.length];
+    if (chart.data.datasets[i]) {
+      chart.data.datasets[i].label = s.key;
+      chart.data.datasets[i].data  = s.data;
+    } else {
+      chart.data.datasets.push({
+        label:           s.key,
+        data:            s.data,
+        backgroundColor: colour + 'cc',
+        borderColor:     colour,
+        borderWidth:     1,
+        borderRadius:    2,
+      });
+    }
+  });
+
+  // Remove excess datasets (key was evicted)
+  if (chart.data.datasets.length > series.length) {
+    chart.data.datasets.splice(series.length);
+  }
+
+  chart.update('none');
+}
+
+// Refresh charts every BUCKET_SECS seconds so the window scrolls even with no events
+setInterval(() => {
+  refreshChart(sourceChart,   sourceStore);
+  refreshChart(endpointChart, endpointStore);
+}, BUCKET_SECS * 1000);
+
+// ---------------------------------------------------------------------------
+// Death Star visual
+// ---------------------------------------------------------------------------
+
+function explode() {
+  if (exploded) return;
+  exploded = true;
+  deathstarSvg.classList.add('ds-exploded');
+  explosionEl.classList.remove('hidden');
+  stationStatus.textContent  = 'DESTROYED';
+  stationStatus.className    = 'station-status status-destroyed';
+}
 
 /**
- * addImpact — spawn a brief flash at a random position on the Death Star body.
- * @param {boolean} allowed  — true = orange hit, false = blue block
+ * addImpact — brief radial flash at a random position on the station body.
+ * colour: 'hit' (orange) for allowed requests, 'block' (blue) for denied.
  */
-function addImpact(allowed) {
-  if (currentState === STATES.EXPLODED) return;
-
-  // Random position within a circle of radius ~100px centred in the wrapper
+function addImpact(type) {
+  if (exploded) return;
   const angle  = Math.random() * 2 * Math.PI;
-  const radius = Math.random() * 90;         // px from centre
-  const cx     = 140 + radius * Math.cos(angle); // wrapper is 280px wide
+  const radius = Math.random() * 90;
+  const cx     = 140 + radius * Math.cos(angle);
   const cy     = 140 + radius * Math.sin(angle);
-
-  const div = document.createElement('div');
-  div.className = `impact ${allowed ? 'impact-hit' : 'impact-block'}`;
+  const div    = document.createElement('div');
+  div.className = `impact impact-${type}`;
   div.style.left = `${cx}px`;
   div.style.top  = `${cy}px`;
   impactLayer.appendChild(div);
-
-  // Remove after animation ends (~800ms)
   div.addEventListener('animationend', () => div.remove(), { once: true });
 }
 
@@ -133,15 +288,8 @@ function addImpact(allowed) {
 // Traffic log
 // ---------------------------------------------------------------------------
 
-/**
- * fmt2 — zero-pad a number to 2 digits.
- */
 function fmt2(n) { return String(n).padStart(2, '0'); }
 
-/**
- * fmtTime — extract HH:MM:SS from an RFC3339Nano timestamp string.
- * Falls back to current local time if parsing fails.
- */
 function fmtTime(ts) {
   try {
     const d = new Date(ts);
@@ -152,68 +300,6 @@ function fmtTime(ts) {
   }
 }
 
-/**
- * addLogEntry — prepend a formatted event row to the traffic log.
- */
-function addLogEntry(ev) {
-  const li = document.createElement('li');
-
-  // Determine CSS class
-  let cls = 'log-other';
-  if (ev.type === 'connected') {
-    cls = 'log-connected';
-  } else if (ev.type === 'exhaust-port') {
-    cls = 'log-exhaust';
-  } else if (ev.allowed) {
-    cls = 'log-allowed';
-  } else {
-    cls = 'log-denied';
-  }
-
-  li.className = `log-entry ${cls}`;
-
-  const time     = fmtTime(ev.timestamp);
-  const identity = ev.identity || ev.source || '?';
-  const method   = (ev.method  || '').padEnd(4, ' ');
-  const path     = ev.endpoint || '';
-  const status   = ev.status   || '';
-  const tick     = ev.allowed ? '✓' : '✗';
-
-  if (ev.type === 'connected') {
-    li.innerHTML = `<span class="log-time">[${time}]</span> SSE client connected`;
-  } else {
-    li.innerHTML =
-      `<span class="log-time">[${time}]</span>` +
-      `<span class="log-identity">${escHtml(identity)}</span>` +
-      `<span class="log-method">${escHtml(method.trim())}</span> ` +
-      `<span class="log-path">${escHtml(path)}</span>` +
-      `<span class="log-arrow"> → </span>` +
-      `<span class="log-status">${status} ${tick}</span>`;
-  }
-
-  // Prepend (newest on top)
-  logList.insertBefore(li, logList.firstChild);
-
-  // Enforce max entries
-  while (logList.children.length > MAX_LOG_ENTRIES) {
-    logList.removeChild(logList.lastChild);
-  }
-
-  // Update counter
-  totalEvents++;
-  eventCounter.textContent = `EVENTS: ${totalEvents}`;
-}
-
-function clearLog() {
-  logList.innerHTML = '';
-}
-
-// Expose to onclick handler in HTML
-window.clearLog = clearLog;
-
-/**
- * escHtml — minimal HTML escaping for untrusted strings.
- */
 function escHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -222,74 +308,106 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+function addLogEntry(ev) {
+  const li  = document.createElement('li');
+  const time = fmtTime(ev.timestamp);
+
+  if (ev.type === 'connected') {
+    li.className = 'log-entry log-connected';
+    li.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-info">SSE connected</span>`;
+  } else {
+    const ip     = escHtml(ev.source   || '?');
+    const method = escHtml((ev.method  || '').trim());
+    const path   = escHtml(ev.endpoint || '');
+    const status = ev.status || '';
+    const tick   = ev.allowed ? '✓' : '✗';
+    const cls    = ev.type === 'exhaust-port' ? 'log-exhaust'
+                 : ev.allowed                 ? 'log-allowed'
+                 :                              'log-denied';
+    li.className = `log-entry ${cls}`;
+    li.innerHTML =
+      `<span class="log-time">[${time}]</span>` +
+      `<span class="log-source">${ip}</span>` +
+      `<span class="log-method">${method}</span> ` +
+      `<span class="log-path">${path}</span>` +
+      `<span class="log-arrow"> → </span>` +
+      `<span class="log-status">${status} ${tick}</span>`;
+  }
+
+  logList.insertBefore(li, logList.firstChild);
+  while (logList.children.length > MAX_LOG) {
+    logList.removeChild(logList.lastChild);
+  }
+
+  totalEvents++;
+  eventCounter.textContent = `EVENTS: ${totalEvents}`;
+}
+
+function clearLog() {
+  logList.innerHTML = '';
+}
+
+window.clearLog = clearLog;
+
 // ---------------------------------------------------------------------------
 // SSE connection
 // ---------------------------------------------------------------------------
 
-function connect() {
-  if (eventSource) {
-    eventSource.close();
-  }
+function parseEvent(e) {
+  try { return JSON.parse(e.data); } catch (_) { return null; }
+}
 
+function connect() {
+  if (eventSource) eventSource.close();
   eventSource = new EventSource(SSE_URL);
 
-  // ----- shield (presenter sets policy level via PUT /v1/shield/{level}) -----
-  eventSource.addEventListener('shield', (e) => {
-    const ev = parseEvent(e);
-    if (!ev) return;
-    // Map API level names → UI state names ("none" → "unprotected")
-    const stateMap = { none: STATES.UNPROTECTED, l3l4: STATES.L3L4, l7: STATES.L7 };
-    const newState = stateMap[ev.level];
-    if (!newState) return;
-    // "none" after explosion = reset; otherwise guard against transitions out of exploded
-    if (currentState === STATES.EXPLODED && newState !== STATES.UNPROTECTED) return;
-    applyState(newState);
-  });
-
-  // ----- request-landing -----
+  // request-landing: normal traffic
   eventSource.addEventListener('request-landing', (e) => {
     const ev = parseEvent(e);
     if (!ev) return;
+    sourceStore.record(ev.source || '?');
+    endpointStore.record(ev.endpoint || '?');
+    refreshChart(sourceChart,   sourceStore);
+    refreshChart(endpointChart, endpointStore);
     addLogEntry(ev);
-    addImpact(ev.allowed);
+    addImpact(ev.allowed ? 'hit' : 'block');
   });
 
-  // ----- exhaust-port -----
+  // exhaust-port: critical vulnerability
   eventSource.addEventListener('exhaust-port', (e) => {
     const ev = parseEvent(e);
     if (!ev) return;
+    sourceStore.record(ev.source || '?');
+    endpointStore.record(ev.endpoint || '?');
+    refreshChart(sourceChart,   sourceStore);
+    refreshChart(endpointChart, endpointStore);
     addLogEntry(ev);
-    if (currentState !== STATES.EXPLODED) {
-      addImpact(false);
-      // Trigger explosion after a brief visual pause
-      setTimeout(() => applyState(STATES.EXPLODED), 600);
-    }
+    addImpact('hit');
+    // Explode after a brief pause so the log entry is visible first
+    setTimeout(explode, 600);
   });
 
-  // ----- connected (hub sends this when a new SSE client joins) -----
+  // other: healthz, root, etc.
+  eventSource.addEventListener('other', (e) => {
+    const ev = parseEvent(e);
+    if (!ev) return;
+    sourceStore.record(ev.source || '?');
+    endpointStore.record(ev.endpoint || '?');
+    refreshChart(sourceChart,   sourceStore);
+    refreshChart(endpointChart, endpointStore);
+    addLogEntry(ev);
+  });
+
+  // connected: SSE hub announces new client
   eventSource.addEventListener('connected', (e) => {
     const ev = parseEvent(e);
     if (ev) addLogEntry(ev);
     setConnStatus('connected');
   });
 
-  // ----- other (healthz, root, etc.) -----
-  eventSource.addEventListener('other', (e) => {
-    const ev = parseEvent(e);
-    if (!ev) return;
-    addLogEntry(ev);
-  });
-
-  // ----- open -----
-  eventSource.onopen = () => {
-    setConnStatus('connected');
-  };
-
-  // ----- error -----
+  eventSource.onopen  = () => setConnStatus('connected');
   eventSource.onerror = () => {
     setConnStatus('disconnected');
-    // The browser will automatically attempt to reconnect.
-    // Update the UI to show "reconnecting" after a short delay.
     setTimeout(() => {
       if (eventSource && eventSource.readyState !== EventSource.OPEN) {
         setConnStatus('connecting');
@@ -298,28 +416,19 @@ function connect() {
   };
 }
 
-function parseEvent(e) {
-  try {
-    return JSON.parse(e.data);
-  } catch (_) {
-    return null;
-  }
-}
-
 function setConnStatus(state) {
   switch (state) {
     case 'connected':
-      connStatus.textContent  = '⬤ CONNECTED';
-      connStatus.className    = 'conn-connected';
+      connStatus.textContent = '⬤ CONNECTED';
+      connStatus.className   = 'conn-connected';
       break;
     case 'disconnected':
-      connStatus.textContent  = '⬤ DISCONNECTED';
-      connStatus.className    = 'conn-disconnected';
+      connStatus.textContent = '⬤ DISCONNECTED';
+      connStatus.className   = 'conn-disconnected';
       break;
-    case 'connecting':
     default:
-      connStatus.textContent  = '⬤ RECONNECTING…';
-      connStatus.className    = 'conn-connecting';
+      connStatus.textContent = '⬤ RECONNECTING…';
+      connStatus.className   = 'conn-connecting';
   }
 }
 

@@ -8,25 +8,21 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <!-- Chart.js for rolling event-rate charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="crt">
 
     <header>
       <h1>☠ DEATH STAR ☠</h1>
-      <div id="status-badge" class="badge state-unprotected">UNPROTECTED</div>
+      <span id="event-counter" class="header-counter">EVENTS: 0</span>
     </header>
 
     <main>
-      <!-- Death Star visual -->
+      <!-- Death Star visual (left) -->
       <section class="station-section">
         <div class="station-wrapper">
-          <!-- Shield ring (L3/L4 or L7) -->
-          <div id="shield-ring" class="shield-ring hidden"></div>
-
-          <!-- L7 lock indicator (inner ring) -->
-          <div id="l7-ring" class="l7-ring hidden"></div>
-
           <!-- Death Star SVG -->
           <svg id="deathstar" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-label="Death Star">
             <!-- Shadow/depth -->
@@ -72,21 +68,53 @@
             <div class="exp-emoji">💥</div>
           </div>
         </div>
+
+        <!-- Station status label -->
+        <div id="station-status" class="station-status">OPERATIONAL</div>
       </section>
 
-      <!-- Traffic log panel -->
-      <aside id="event-log">
-        <div class="log-header">
-          <h2>TRAFFIC LOG</h2>
-          <button class="clear-btn" onclick="clearLog()">CLEAR</button>
+      <!-- Dashboard panels (right) -->
+      <div class="dashboard">
+
+        <!-- Charts row -->
+        <div class="charts-row">
+          <!-- By source IP -->
+          <div class="chart-panel">
+            <div class="panel-header">
+              <span class="panel-title">REQUESTS / SOURCE IP</span>
+              <span class="panel-subtitle">rolling 3 min</span>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="chart-source"></canvas>
+            </div>
+          </div>
+
+          <!-- By endpoint -->
+          <div class="chart-panel">
+            <div class="panel-header">
+              <span class="panel-title">REQUESTS / ENDPOINT</span>
+              <span class="panel-subtitle">rolling 3 min</span>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="chart-endpoint"></canvas>
+            </div>
+          </div>
         </div>
-        <ul id="log-list" role="log" aria-live="polite" aria-label="Traffic events"></ul>
-      </aside>
+
+        <!-- Event log -->
+        <aside id="event-log">
+          <div class="log-header">
+            <h2>TRAFFIC LOG</h2>
+            <button class="clear-btn" onclick="clearLog()">CLEAR</button>
+          </div>
+          <ul id="log-list" role="log" aria-live="polite" aria-label="Traffic events"></ul>
+        </aside>
+
+      </div><!-- .dashboard -->
     </main>
 
     <footer>
       <span id="conn-status" class="conn-connecting">⬤ CONNECTING…</span>
-      <span id="event-counter">EVENTS: 0</span>
       <span class="footer-brand">CILIUM NETWORK SECURITY</span>
     </footer>
 

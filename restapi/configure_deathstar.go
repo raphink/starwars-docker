@@ -116,38 +116,13 @@ func setupMiddlewares(handler http.Handler) http.Handler {
 
 // setupGlobalMiddleware wraps the entire handler stack. It:
 //  1. Routes GET /v1/events to the SSE hub (before the swagger router sees it).
-//  2. Routes PUT /v1/shield/{level} to the shield control handler.
-//  3. Wraps every other request with a status-capturing recorder so each completed
+//  2. Wraps every other request with a status-capturing recorder so each completed
 //     request is broadcast as an Event to all connected SSE clients.
 func setupGlobalMiddleware(handler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 
 	// SSE endpoint — must be registered before the catch-all below.
 	mux.Handle("/v1/events", globalHub)
-
-	// Shield control — PUT /v1/shield/{level} where level is "none", "l3l4", or "l7".
-	// This endpoint is intentionally not in the swagger spec; it is a demo control plane.
-	mux.HandleFunc("/v1/shield/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		level := strings.TrimPrefix(r.URL.Path, "/v1/shield/")
-		switch level {
-		case "none", "l3l4", "l7":
-		default:
-			http.Error(w, `level must be "none", "l3l4", or "l7"`, http.StatusBadRequest)
-			return
-		}
-		globalHub.Broadcast(Event{
-			Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-			Type:      "shield",
-			Level:     level,
-			Allowed:   true,
-		})
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintf(w, "shield level set to %s\n", level)
-	})
 
 	// All other requests go through the swagger handler, wrapped by the event emitter.
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

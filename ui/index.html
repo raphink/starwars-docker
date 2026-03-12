@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Death Star — Cilium Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="crt">
+
+    <header>
+      <h1>☠ DEATH STAR ☠</h1>
+      <div id="status-badge" class="badge state-unprotected">UNPROTECTED</div>
+    </header>
+
+    <main>
+      <!-- Death Star visual -->
+      <section class="station-section">
+        <div class="station-wrapper">
+          <!-- Shield ring (L3/L4 or L7) -->
+          <div id="shield-ring" class="shield-ring hidden"></div>
+
+          <!-- L7 lock indicator (inner ring) -->
+          <div id="l7-ring" class="l7-ring hidden"></div>
+
+          <!-- Death Star SVG -->
+          <svg id="deathstar" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-label="Death Star">
+            <!-- Shadow/depth -->
+            <circle cx="104" cy="104" r="90" class="ds-shadow"/>
+            <!-- Main body -->
+            <circle cx="100" cy="100" r="90" class="ds-body"/>
+            <!-- Surface texture bands -->
+            <ellipse cx="100" cy="100" rx="90" ry="18" class="ds-band"/>
+            <ellipse cx="100" cy="100" rx="90" ry="45" class="ds-band-faint"/>
+            <!-- Equator trench -->
+            <line x1="10" y1="100" x2="190" y2="100" class="ds-trench"/>
+            <!-- Trench highlights -->
+            <line x1="10" y1="96" x2="190" y2="96" class="ds-trench-hi"/>
+            <line x1="10" y1="104" x2="190" y2="104" class="ds-trench-lo"/>
+            <!-- Superlaser dish housing -->
+            <circle cx="62" cy="68" r="26" class="ds-dish-rim"/>
+            <circle cx="62" cy="68" r="22" class="ds-dish"/>
+            <circle cx="62" cy="68" r="14" class="ds-dish-mid"/>
+            <circle cx="62" cy="68" r="7"  class="ds-dish-core"/>
+            <!-- Dish focusing rings -->
+            <circle cx="62" cy="68" r="10" class="ds-dish-ring" fill="none"/>
+            <circle cx="62" cy="68" r="17" class="ds-dish-ring" fill="none"/>
+            <!-- Surface craters/detail -->
+            <circle cx="145" cy="55"  r="7"  class="ds-crater"/>
+            <circle cx="160" cy="130" r="5"  class="ds-crater"/>
+            <circle cx="78"  cy="152" r="6"  class="ds-crater"/>
+            <circle cx="130" cy="155" r="4"  class="ds-crater"/>
+            <circle cx="170" cy="80"  r="3"  class="ds-crater"/>
+            <circle cx="40"  cy="130" r="4"  class="ds-crater"/>
+            <!-- Tower structures -->
+            <rect x="115" y="36" width="4" height="10" class="ds-tower"/>
+            <rect x="148" y="96" width="3" height="8"  class="ds-tower"/>
+          </svg>
+
+          <!-- Impact flash layer -->
+          <div id="impact-layer" aria-hidden="true"></div>
+
+          <!-- Explosion overlay -->
+          <div id="explosion" class="explosion hidden" aria-label="Explosion">
+            <div class="exp-ring exp-ring-1"></div>
+            <div class="exp-ring exp-ring-2"></div>
+            <div class="exp-ring exp-ring-3"></div>
+            <div class="exp-emoji">💥</div>
+          </div>
+        </div>
+
+        <!-- State controls -->
+        <div id="controls">
+          <button class="ctrl-btn" onclick="setStateManual('unprotected')">NO SHIELD</button>
+          <button class="ctrl-btn" onclick="setStateManual('l3l4')">L3/L4</button>
+          <button class="ctrl-btn" onclick="setStateManual('l7')">L7 LOCK</button>
+          <button class="ctrl-btn reset-btn" onclick="resetStation()">RESET</button>
+        </div>
+      </section>
+
+      <!-- Traffic log panel -->
+      <aside id="event-log">
+        <div class="log-header">
+          <h2>TRAFFIC LOG</h2>
+          <button class="clear-btn" onclick="clearLog()">CLEAR</button>
+        </div>
+        <ul id="log-list" role="log" aria-live="polite" aria-label="Traffic events"></ul>
+      </aside>
+    </main>
+
+    <footer>
+      <span id="conn-status" class="conn-connecting">⬤ CONNECTING…</span>
+      <span id="event-counter">EVENTS: 0</span>
+      <span class="footer-brand">CILIUM NETWORK SECURITY</span>
+    </footer>
+
+  </div><!-- .crt -->
+
+  <script src="app.js"></script>
+</body>
+</html>

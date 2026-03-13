@@ -487,16 +487,40 @@ function explode() {
   if (exploded) return;
   exploded = true;
 
-  // Three.js — reddish body + emissive glow + orange key light
-  dsMat.color.setHex(0x5a2020);
-  dsMat.emissive.setHex(0xff1a08);
-  dsMat.emissiveIntensity = 0.35;
-  dsDirLight.color.setHex(0xff4400);
-  dsDirLight.intensity = 1.8;
+  // Flash the mount white, then animate sphere breaking apart
+  dsMount.style.transition = 'filter 0.1s';
+  dsMount.style.filter = 'brightness(4) saturate(0)';
+  setTimeout(() => { dsMount.style.filter = 'none'; }, 120);
 
-  // Drop-shadow filter on the mount div (matches old .ds-exploded filter)
-  dsMount.style.filter = 'drop-shadow(0 0 16px rgba(255, 60, 20, 0.8))';
+  // Animate sphere: scale up + fade away over 1.4s using render loop
+  let t = 0;
+  const breakApart = () => {
+    t += 0.012;
+    if (t <= 1) {
+      dsSphere.scale.setScalar(1 + t * 0.6);
+      dsMat.opacity = 1 - t;
+      dsMat.transparent = true;
+      // Shift to orange-red as it breaks
+      dsMat.emissive.setHex(0xff2200);
+      dsMat.emissiveIntensity = t * 1.5;
+      requestAnimationFrame(breakApart);
+    } else {
+      dsSphere.visible = false;
+    }
+  };
+  requestAnimationFrame(breakApart);
 
+  // Shake the whole station wrapper
+  dsMount.animate([
+    { transform: 'translate(0,0)' },
+    { transform: 'translate(-8px,-4px)' },
+    { transform: 'translate(8px,5px)' },
+    { transform: 'translate(-6px,3px)' },
+    { transform: 'translate(5px,-6px)' },
+    { transform: 'translate(0,0)' },
+  ], { duration: 400, easing: 'ease-out' });
+
+  // Show explosion overlay (CSS handles fireball + rings + debris)
   explosionEl.classList.remove('hidden');
   stationStatus.textContent = 'DESTROYED';
   stationStatus.className   = 'station-status status-destroyed';

@@ -32,13 +32,13 @@ const PALETTE = [
 // ---------------------------------------------------------------------------
 // DOM refs
 // ---------------------------------------------------------------------------
-const deathstarSvg  = document.getElementById('deathstar');
-const impactLayer   = document.getElementById('impact-layer');
-const explosionEl   = document.getElementById('explosion');
+const dsMount      = document.getElementById('deathstar-mount');
+const impactLayer  = document.getElementById('impact-layer');
+const explosionEl  = document.getElementById('explosion');
 const stationStatus = document.getElementById('station-status');
-const logList       = document.getElementById('log-list');
-const connStatus    = document.getElementById('conn-status');
-const eventCounter  = document.getElementById('event-counter');
+const logList      = document.getElementById('log-list');
+const connStatus   = document.getElementById('conn-status');
+const eventCounter = document.getElementById('event-counter');
 
 // ---------------------------------------------------------------------------
 // Application state
@@ -254,29 +254,267 @@ setInterval(() => {
 }, BUCKET_SECS * 1000);
 
 // ---------------------------------------------------------------------------
-// Death Star visual
+// Death Star — Three.js 3-D sphere
+// ---------------------------------------------------------------------------
+
+/**
+ * buildSurfaceCanvas — paints the Death Star surface as a 1024×512
+ * equirectangular texture map.  Three.js wraps it onto the sphere automatically.
+ *
+ * Coordinate helper: (lon°, lat°) → pixel (u, v)
+ *   u = (lon + 180) / 360 * W      left=-180°, right=+180°
+ *   v = (90 - lat)  / 180 * H      top=+90°N,  bottom=-90°S
+ */
+function buildSurfaceCanvas() {
+  const W = 1024, H = 512;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+
+  function uv(lonDeg, latDeg) {
+    return [((lonDeg + 180) / 360) * W, ((90 - latDeg) / 180) * H];
+  }
+
+  // ── Base body ──────────────────────────────────────────────────────────
+  ctx.fillStyle = '#5a5a6a';
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Subtle polar darkening ─────────────────────────────────────────────
+  const polarGrad = ctx.createLinearGradient(0, 0, 0, H);
+  polarGrad.addColorStop(0,   'rgba(0,0,0,0.28)');
+  polarGrad.addColorStop(0.2, 'rgba(0,0,0,0)');
+  polarGrad.addColorStop(0.8, 'rgba(0,0,0,0)');
+  polarGrad.addColorStop(1,   'rgba(0,0,0,0.28)');
+  ctx.fillStyle = polarGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Very subtle north-south surface banding ────────────────────────────
+  // Adds faint tonal variation to break up the monotone grey
+  for (const [latTop, latBot, alpha] of [
+    [60, 30, 0.04], [-30, -60, 0.04],
+  ]) {
+    const [, vTop] = uv(0, latTop);
+    const [, vBot] = uv(0, latBot);
+    const g = ctx.createLinearGradient(0, vTop, 0, vBot);
+    g.addColorStop(0,   `rgba(136,136,160,0)`);
+    g.addColorStop(0.5, `rgba(136,136,160,${alpha})`);
+    g.addColorStop(1,   `rgba(136,136,160,0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, vTop, W, vBot - vTop);
+  }
+
+  // ── Equator trench ─────────────────────────────────────────────────────
+  const [, vT] = uv(0,  4.5);
+  const [, vB] = uv(0, -4.5);
+  ctx.fillStyle = '#2a2a38';
+  ctx.fillRect(0, vT, W, vB - vT);
+  // highlight above
+  ctx.strokeStyle = 'rgba(136,136,160,0.45)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, vT - 2); ctx.lineTo(W, vT - 2); ctx.stroke();
+  // shadow below
+  ctx.strokeStyle = 'rgba(8,8,18,0.65)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, vB + 2); ctx.lineTo(W, vB + 2); ctx.stroke();
+
+  // ── Superlaser dish ────────────────────────────────────────────────────
+  // lon = -0.68 rad ≈ -38.95°,  lat = 0.55 rad ≈ 31.51°
+  const [du, dv] = uv(-39, 31.5);
+  const DR = 46;   // dish outer radius in texture pixels
+
+  function arc(r, fill, stroke, lw, alpha) {
+    ctx.save();
+    if (alpha !== undefined) ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(du, dv, r, 0, Math.PI * 2);
+    if (fill)   { ctx.fillStyle   = fill;   ctx.fill();   }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw ?? 1.5; ctx.stroke(); }
+    ctx.restore();
+  }
+
+  arc(DR + 5,  '#16161e', null, null, 0.75);  // recessed drop-shadow
+  arc(DR,      '#2e2e3a');                      // outer rim
+  arc(DR - 5,  '#3a3a4a');                      // dish body (narrow lip)
+  arc(DR - 10, '#0a0a10');                      // deep dark bowl (wide concavity)
+  arc(DR - 14, '#111118');                      // bowl floor
+  arc(DR - 18, '#1a1a24');                      // inner bowl highlight
+  arc(DR - 13, null, '#44445a', 1.5, 0.6);     // focusing ring outer
+  arc(DR - 22, null, '#44445a', 1.5, 0.6);     // focusing ring inner
+  arc(DR - 28, null, '#33334a', 1.0, 0.5);     // focusing ring innermost
+  // Emitter — orange hollow ring with glow
+  ctx.save();
+  ctx.shadowColor = '#ff8844';
+  ctx.shadowBlur  = 14;
+  arc(DR - 34, null, '#ff9955', 3.5);
+  ctx.restore();
+  // Emitter core — faint orange dot
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  arc(DR - 38, '#ff6622');
+  ctx.restore();
+
+  // ── Meridional panel lines — run pole-to-pole every 45°, very subtle ──
+  // Breaks up the back hemisphere so it looks structured, not empty
+  ctx.strokeStyle = 'rgba(30,30,50,0.55)';
+  ctx.lineWidth = 2;
+  for (let lon = -180; lon < 180; lon += 45) {
+    const [pu] = uv(lon, 0);
+    ctx.beginPath();
+    ctx.moveTo(pu, 0);
+    ctx.lineTo(pu, H);
+    ctx.stroke();
+  }
+  // Highlight edge on alternating ones
+  ctx.strokeStyle = 'rgba(100,100,120,0.18)';
+  ctx.lineWidth = 1;
+  for (let lon = -157.5; lon < 180; lon += 90) {
+    const [pu] = uv(lon, 0);
+    ctx.beginPath();
+    ctx.moveTo(pu + 2, 0);
+    ctx.lineTo(pu + 2, H);
+    ctx.stroke();
+  }
+
+  // ── Secondary latitude trenches ─────────────────────────────────────────
+  for (const latD of [42, -42]) {
+    const [, vL] = uv(0, latD);
+    ctx.fillStyle = 'rgba(30,30,46,0.5)';
+    ctx.fillRect(0, vL - 3, W, 6);
+    ctx.strokeStyle = 'rgba(100,100,120,0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, vL - 4); ctx.lineTo(W, vL - 4); ctx.stroke();
+  }
+
+  // ── Craters — spread across ALL longitudes for a full-sphere look ────────
+  for (const [lonD, latD, r] of [
+    // Front hemisphere (will be visible immediately)
+    [ -39,   55,   9],
+    [  20,  -38,   8],
+    [  75,   18,   6],
+    [ -80,  -22,  10],
+    [  50,  -52,   7],
+    [  10,   48,   5],
+    // Back hemisphere (visible as DS rotates)
+    [ 110,   30,   9],
+    [ 145,  -18,  11],
+    [-130,   42,   7],
+    [-160,  -35,   8],
+    [ 170,   10,   6],
+    [-110,   -8,   5],
+    [ 130,  -50,   9],
+    [-150,   55,   7],
+  ]) {
+    const [cu, cv] = uv(lonD, latD);
+    // Raised rim gradient
+    const rim = ctx.createRadialGradient(cu, cv, r * 0.65, cu, cv, r);
+    rim.addColorStop(0, '#30303c');
+    rim.addColorStop(1, '#484858');
+    ctx.fillStyle = rim;
+    ctx.beginPath(); ctx.arc(cu, cv, r, 0, Math.PI * 2); ctx.fill();
+    // Dark inner bowl
+    ctx.fillStyle = '#1c1c26';
+    ctx.beginPath(); ctx.arc(cu, cv, r * 0.55, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // ── Turret clusters — small rectangular protrusions, back hemisphere ─────
+  ctx.fillStyle = '#484858';
+  for (const [lonD, latD] of [
+    [ 120,   15], [ 125,   18], [ 122,   12],   // cluster 1
+    [-140,  -28], [-136,  -25], [-143,  -30],   // cluster 2
+    [ 160,   48], [ 164,   44],                  // cluster 3
+  ]) {
+    const [tu, tv] = uv(lonD, latD);
+    ctx.fillRect(tu - 2, tv - 2, 4, 4);
+    ctx.fillStyle = '#5a5a6e';
+    ctx.fillRect(tu - 1, tv - 3, 2, 2);
+    ctx.fillStyle = '#484858';
+  }
+
+  return c;
+}
+
+// ── Scene setup ─────────────────────────────────────────────────────────────
+
+const DS_SIZE = 240;   // canvas px — matches CSS width/height
+
+const dsRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+dsRenderer.setSize(DS_SIZE, DS_SIZE);
+dsRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+dsRenderer.setClearColor(0x000000, 0);
+dsMount.appendChild(dsRenderer.domElement);
+
+const dsScene  = new THREE.Scene();
+const dsCamera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+dsCamera.position.set(0, 0, 3.8);
+
+const dsGeo = new THREE.SphereGeometry(1, 64, 32);
+const dsTex = new THREE.CanvasTexture(buildSurfaceCanvas());
+
+const dsMat = new THREE.MeshStandardMaterial({
+  map:               dsTex,
+  roughness:         0.85,
+  metalness:         0.0,
+  emissive:          new THREE.Color(0x000000),
+  emissiveIntensity: 0,
+});
+const dsSphere = new THREE.Mesh(dsGeo, dsMat);
+dsScene.add(dsSphere);
+
+// Ambient — prevents total black on the shadow side
+const dsAmbient = new THREE.AmbientLight(0x8888aa, 0.4);
+dsScene.add(dsAmbient);
+
+// Key light — upper-left of camera; creates natural terminator on right
+const dsDirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dsDirLight.position.set(-2, 1.5, 3);
+dsScene.add(dsDirLight);
+
+const DS_ROT_SPEED = 0.007;   // radians/frame @ ~60 fps ≈ 8 s per revolution
+
+function dsAnimate() {
+  requestAnimationFrame(dsAnimate);
+  if (!exploded) dsSphere.rotation.y += DS_ROT_SPEED;
+  dsRenderer.render(dsScene, dsCamera);
+}
+
+requestAnimationFrame(dsAnimate);
+
+// ---------------------------------------------------------------------------
+// Death Star visual transitions
 // ---------------------------------------------------------------------------
 
 function explode() {
   if (exploded) return;
   exploded = true;
-  deathstarSvg.classList.add('ds-exploded');
+
+  // Three.js — reddish body + emissive glow + orange key light
+  dsMat.color.setHex(0x5a2020);
+  dsMat.emissive.setHex(0xff1a08);
+  dsMat.emissiveIntensity = 0.35;
+  dsDirLight.color.setHex(0xff4400);
+  dsDirLight.intensity = 1.8;
+
+  // Drop-shadow filter on the mount div (matches old .ds-exploded filter)
+  dsMount.style.filter = 'drop-shadow(0 0 16px rgba(255, 60, 20, 0.8))';
+
   explosionEl.classList.remove('hidden');
-  stationStatus.textContent  = 'DESTROYED';
-  stationStatus.className    = 'station-status status-destroyed';
+  stationStatus.textContent = 'DESTROYED';
+  stationStatus.className   = 'station-status status-destroyed';
 }
 
 /**
  * addImpact — brief radial flash at a random position on the station body.
- * colour: 'hit' (orange) for allowed requests, 'block' (blue) for denied.
+ * The Three.js canvas is 240×240 and centred inside the 260×260 wrapper,
+ * so the sphere centre sits at (130, 130) within the wrapper coords.
  */
 function addImpact(type) {
   if (exploded) return;
   const angle  = Math.random() * 2 * Math.PI;
   const radius = Math.random() * 90;
-  const cx     = 140 + radius * Math.cos(angle);
-  const cy     = 140 + radius * Math.sin(angle);
-  const div    = document.createElement('div');
+  // Sphere centre within .station-wrapper: canvas is 240px centred in 260px → offset = 10px
+  const cx = 130 + radius * Math.cos(angle);
+  const cy = 130 + radius * Math.sin(angle);
+  const div = document.createElement('div');
   div.className = `impact impact-${type}`;
   div.style.left = `${cx}px`;
   div.style.top  = `${cy}px`;

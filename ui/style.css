@@ -146,36 +146,21 @@ main {
   justify-content: center;
 }
 
-/* ---------- Death Star SVG ---------- */
-#deathstar {
+/* ---------- Death Star 3-D canvas mount ---------- */
+#deathstar-mount {
   width: 240px;
   height: 240px;
-  shape-rendering: crispEdges;
-  filter: drop-shadow(0 0 6px rgba(100, 100, 120, 0.5));
-  transition: filter 0.5s ease;
   position: relative;
   z-index: 2;
+  filter: drop-shadow(0 0 6px rgba(100, 100, 120, 0.5));
+  transition: filter 0.5s ease;
 }
 
-.ds-shadow      { fill: #040408; }
-.ds-body        { fill: var(--ds-body); }
-.ds-band        { fill: none; stroke: var(--ds-dark); stroke-width: 1.5; opacity: 0.6; }
-.ds-band-faint  { fill: none; stroke: var(--ds-dark); stroke-width: 1;   opacity: 0.3; }
-.ds-trench      { stroke: var(--ds-dark); stroke-width: 5;   fill: none; }
-.ds-trench-hi   { stroke: var(--ds-hi);   stroke-width: 1;   fill: none; opacity: 0.4; }
-.ds-trench-lo   { stroke: #202028;        stroke-width: 1;   fill: none; opacity: 0.6; }
-.ds-dish-rim    { fill: var(--ds-dark); }
-.ds-dish        { fill: var(--ds-dish); }
-.ds-dish-mid    { fill: #28282e; }
-.ds-dish-core   { fill: var(--ds-core); }
-.ds-dish-ring   { stroke: #50505a; stroke-width: 1; opacity: 0.5; }
-.ds-crater      { fill: var(--ds-dark); }
-.ds-tower       { fill: var(--ds-dark); }
-
-/* Exploded state */
-.ds-exploded .ds-body   { fill: #5a2020; }
-.ds-exploded .ds-shadow { fill: #1a0808; }
-.ds-exploded            { filter: drop-shadow(0 0 16px rgba(255, 60, 20, 0.8)); }
+#deathstar-mount canvas {
+  display: block;
+  width: 240px;
+  height: 240px;
+}
 
 /* ---------- Station status label ---------- */
 .station-status {
@@ -209,27 +194,28 @@ main {
 
 .impact {
   position: absolute;
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  animation: impact-fade 0.8s ease-out forwards;
+  animation: impact-fade 0.7s ease-out forwards;
+  pointer-events: none;
 }
 
 .impact-hit {
-  background: radial-gradient(circle, #ff4400 0%, rgba(255, 68, 0, 0) 70%);
-  box-shadow: 0 0 6px #ff4400;
+  background: radial-gradient(circle, #ffaa00 0%, #ff4400 40%, rgba(255, 68, 0, 0) 70%);
+  box-shadow: 0 0 12px #ff6600, 0 0 4px #ffaa00;
 }
 
 .impact-block {
-  background: radial-gradient(circle, var(--blue) 0%, rgba(68, 170, 255, 0) 70%);
-  box-shadow: 0 0 6px var(--blue);
+  background: radial-gradient(circle, #88ddff 0%, var(--blue) 40%, rgba(68, 170, 255, 0) 70%);
+  box-shadow: 0 0 12px var(--blue), 0 0 4px #88ddff;
 }
 
 @keyframes impact-fade {
-  0%   { opacity: 1;   transform: translate(-50%, -50%) scale(0.5); }
-  40%  { opacity: 0.9; transform: translate(-50%, -50%) scale(1.5); }
-  100% { opacity: 0;   transform: translate(-50%, -50%) scale(2.5); }
+  0%   { opacity: 1;   transform: translate(-50%, -50%) scale(0.3); }
+  30%  { opacity: 1;   transform: translate(-50%, -50%) scale(1.2); }
+  100% { opacity: 0;   transform: translate(-50%, -50%) scale(2.0); }
 }
 
 /* ---------- Explosion ---------- */
